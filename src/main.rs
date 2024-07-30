@@ -8,8 +8,11 @@ use std::{
 use futures::{self, Stream};
 use iced::{
     advanced::{graphics::core::window, subscription::Recipe},
-    widget::text_input,
-    window::Settings,
+    widget::{container, scrollable, text::LineHeight, text_input},
+    window::{Position, Settings},
+    Background, Border, Color,
+    Length::Fill,
+    Pixels, Shadow,
 };
 use windows::{
     core::w,
@@ -29,17 +32,19 @@ use windows::{
     },
 };
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 enum Messages {
     EmoteInput(String),
     EmoteSelect,
     EmotePickerToggle,
     WindowOpen(window::Id),
+    Event(iced::Event),
 }
 
 struct EmotePicker {
     emote_text: String,
     win: Option<window::Id>,
+    emote_index: i32,
     winapi_events: async_channel::Receiver<Messages>,
 }
 
@@ -64,6 +69,7 @@ impl EmotePicker {
         (
             EmotePicker {
                 emote_text: String::new(),
+                emote_index: 0,
                 win: None,
                 winapi_events: flags.0,
             },
@@ -72,10 +78,13 @@ impl EmotePicker {
     }
 
     fn subscription(&self) -> iced::Subscription<Messages> {
-        iced::advanced::subscription::from_recipe(ExternalMessageStreamRecipe(Box::pin(
-            self.winapi_events.clone(),
-        )
-            as Pin<Box<dyn Stream<Item = Messages> + Send>>))
+        iced::Subscription::batch([
+            iced::advanced::subscription::from_recipe(ExternalMessageStreamRecipe(Box::pin(
+                self.winapi_events.clone(),
+            )
+                as Pin<Box<dyn Stream<Item = Messages> + Send>>)),
+            iced::event::listen().map(Messages::Event),
+        ])
     }
 
     fn title(&self, _: window::Id) -> String {
@@ -88,19 +97,53 @@ impl EmotePicker {
 
     fn update(&mut self, msg: Messages) -> iced::Task<Messages> {
         match msg {
-            Messages::EmoteInput(_) => todo!(),
+            Messages::EmoteInput(text) => {
+                self.emote_index = 0;
+                self.emote_text = text;
+                iced::Task::none()
+            }
             Messages::EmoteSelect => todo!(),
             Messages::EmotePickerToggle => match self.win {
                 Some(t) => {
                     self.win = None;
                     iced::window::close(t)
                 }
-                None => iced::window::open(Settings::default()).map(Messages::WindowOpen),
+                None => iced::window::open({
+                    let mut settings = Settings::default();
+                    settings.position = Position::Centered;
+                    settings
+                })
+                .map(Messages::WindowOpen),
             },
             Messages::WindowOpen(id) => {
                 self.win = Some(id);
+                self.emote_index = 0;
                 iced::Task::none()
             }
+            Messages::Event(iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key:
+                    iced::keyboard::Key::Named(
+                        key @ (iced::keyboard::key::Named::ArrowDown
+                        | iced::keyboard::key::Named::ArrowUp),
+                    ),
+                ..
+            })) => {
+                match key {
+                    iced::keyboard::key::Named::ArrowDown => {
+                        self.emote_index += 1;
+                    }
+                    iced::keyboard::key::Named::ArrowUp => {
+                        self.emote_index -= 1;
+                    }
+                    _ => unreachable!(),
+                }
+                iced::Task::none()
+            }
+            Messages::Event(iced::Event::Window(iced::window::Event::Closed { .. })) => {
+                self.win = None;
+                iced::Task::none()
+            }
+            _ => iced::Task::none(),
         }
     }
 
@@ -108,9 +151,39 @@ impl EmotePicker {
         let input = text_input("Emote", &self.emote_text)
             .on_input(Messages::EmoteInput)
             .on_submit(Messages::EmoteSelect)
-            .padding(15)
-            .size(30);
-        input.into()
+            .padding(10)
+            .size(25);
+
+        let options = (0..10)
+            .map(|_| {
+                container(iced::widget::row![
+                    iced::widget::text("test").size(Pixels(25.0))
+                ])
+                .width(Fill)
+                .padding(10)
+            })
+            .enumerate()
+            .map(|(i, item)| {
+                if i == self.emote_index as usize {
+                    item.style(|_| container::Style {
+                        text_color: Default::default(),
+                        background: Some(Background::Color(Color {
+                            r: 0.2,
+                            g: 0.,
+                            b: 0.8,
+                            a: 1.0,
+                        })),
+                        border: Border::default(),
+                        shadow: Shadow::default(),
+                    })
+                } else {
+                    item
+                }
+            });
+
+        let options = iced::widget::column(options.map(Into::into));
+        let options = scrollable(options);
+        iced::widget::column![input, options,].into()
     }
 }
 
@@ -212,5 +285,6 @@ fn main() {
     iced::daemon(EmotePicker::title, EmotePicker::update, EmotePicker::view)
         .subscription(EmotePicker::subscription)
         .theme(EmotePicker::theme)
-        .run_with(move || EmotePicker::new((recv,)));
+        .run_with(move || EmotePicker::new((recv,)))
+        .unwrap();
 }
