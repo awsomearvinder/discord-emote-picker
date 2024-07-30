@@ -6,6 +6,7 @@ use std::{
 };
 
 use futures::{self, Stream};
+use fuzzy_matcher::FuzzyMatcher;
 use iced::{
     advanced::{graphics::core::window, subscription::Recipe},
     widget::{container, scrollable, text::LineHeight, text_input},
@@ -39,11 +40,13 @@ enum Messages {
     EmotePickerToggle,
     WindowOpen(window::Id),
     Event(iced::Event),
+    LoadedEntries(Vec<String>),
 }
 
 struct EmotePicker {
     emote_text: String,
     win: Option<window::Id>,
+    entries: Vec<String>,
     emote_index: i32,
     winapi_events: async_channel::Receiver<Messages>,
 }
@@ -68,6 +71,7 @@ impl EmotePicker {
     fn new(flags: (async_channel::Receiver<Messages>,)) -> (Self, iced::Task<Messages>) {
         (
             EmotePicker {
+                entries: vec![],
                 emote_text: String::new(),
                 emote_index: 0,
                 win: None,
@@ -96,11 +100,28 @@ impl EmotePicker {
     }
 
     fn update(&mut self, msg: Messages) -> iced::Task<Messages> {
+        let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
         match msg {
             Messages::EmoteInput(text) => {
                 self.emote_index = 0;
-                self.emote_text = text;
-                iced::Task::none()
+                self.emote_text = text.clone();
+                iced::Task::perform(
+                    async move {
+                        let mut dir = tokio::fs::read_dir(r"C:\Users\Awsom\Documents\Emotes")
+                            .await
+                            .unwrap();
+
+                        let mut contents = vec![];
+                        while let Ok(Some(next_entry)) = dir.next_entry().await {
+                            contents.push(next_entry.path().to_string_lossy().to_string());
+                        }
+
+                        contents
+                            .sort_unstable_by_key(|i| matcher.fuzzy_match(i, &text).unwrap_or(-1));
+                        contents
+                    },
+                    Messages::LoadedEntries,
+                )
             }
             Messages::EmoteSelect => todo!(),
             Messages::EmotePickerToggle => match self.win {
@@ -143,6 +164,10 @@ impl EmotePicker {
                 self.win = None;
                 iced::Task::none()
             }
+            Messages::LoadedEntries(entries) => {
+                self.entries = entries;
+                iced::Task::none()
+            }
             _ => iced::Task::none(),
         }
     }
@@ -154,10 +179,13 @@ impl EmotePicker {
             .padding(10)
             .size(25);
 
-        let options = (0..10)
-            .map(|_| {
+        let options = self
+            .entries
+            .iter()
+            .rev()
+            .map(|entry| {
                 container(iced::widget::row![
-                    iced::widget::text("test").size(Pixels(25.0))
+                    iced::widget::text(entry).size(Pixels(25.0))
                 ])
                 .width(Fill)
                 .padding(10)
