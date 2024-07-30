@@ -299,7 +299,6 @@ fn paste_png(win: Option<HWND>, path: &Path) {
 }
 
 fn main() {
-    std::thread::sleep_ms(1000);
     // paste_png(
     //     None,
     //     &std::path::PathBuf::from(r"C:\Users\Awsom\Downloads\Acheron_Sticker_01.png"),
