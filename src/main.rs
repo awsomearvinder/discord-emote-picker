@@ -49,6 +49,7 @@ struct EmotePicker {
     entries: Vec<String>,
     emote_index: i32,
     winapi_events: async_channel::Receiver<Messages>,
+    text_id: iced::widget::text_input::Id,
 }
 
 struct ExternalMessageStreamRecipe(Pin<Box<dyn Stream<Item = Messages> + Send>>);
@@ -76,6 +77,7 @@ impl EmotePicker {
                 emote_index: 0,
                 win: None,
                 winapi_events: flags.0,
+                text_id: text_input::Id::unique(),
             },
             iced::Task::none(),
         )
@@ -139,7 +141,8 @@ impl EmotePicker {
             Messages::WindowOpen(id) => {
                 self.win = Some(id);
                 self.emote_index = 0;
-                iced::Task::none()
+                iced::window::gain_focus(id)
+                    .chain(iced::widget::text_input::focus(self.text_id.clone()))
             }
             Messages::Event(iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key:
@@ -176,6 +179,7 @@ impl EmotePicker {
         let input = text_input("Emote", &self.emote_text)
             .on_input(Messages::EmoteInput)
             .on_submit(Messages::EmoteSelect)
+            .id(self.text_id.clone())
             .padding(10)
             .size(25);
 
