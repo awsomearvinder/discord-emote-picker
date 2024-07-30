@@ -133,7 +133,9 @@ impl EmotePicker {
                 }
                 None => iced::window::open({
                     let mut settings = Settings::default();
+                    settings.decorations = false;
                     settings.position = Position::Centered;
+                    settings.level = iced::window::Level::AlwaysOnTop;
                     settings
                 })
                 .map(Messages::WindowOpen),
