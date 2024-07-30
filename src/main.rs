@@ -23,7 +23,10 @@ use windows::{
                 RegisterHotKey, SendInput, INPUT, INPUT_0, INPUT_TYPE, KEYBDINPUT, KEYEVENTF_KEYUP,
                 MOD_CONTROL, MOD_NOREPEAT,
             },
-            WindowsAndMessaging::{BringWindowToTop, GetMessageW, MSG, WM_HOTKEY},
+            WindowsAndMessaging::{
+                BringWindowToTop, GetForegroundWindow, GetMessageW, SetForegroundWindow, MSG,
+                WM_HOTKEY,
+            },
         },
     },
 };
@@ -36,11 +39,13 @@ enum Messages {
     WindowOpen(window::Id),
     Event(iced::Event),
     LoadedEntries(Vec<String>),
+    None,
 }
 
 struct EmotePicker {
     emote_text: String,
     win: Option<window::Id>,
+    prev_window: HWND,
     entries: Vec<String>,
     emote_index: i32,
     winapi_events: async_channel::Receiver<Messages>,
@@ -63,6 +68,9 @@ impl Recipe for ExternalMessageStreamRecipe {
     }
 }
 
+struct HwndSend(HWND);
+unsafe impl Send for HwndSend {}
+
 impl EmotePicker {
     fn new(flags: (async_channel::Receiver<Messages>,)) -> (Self, iced::Task<Messages>) {
         (
@@ -73,6 +81,7 @@ impl EmotePicker {
                 win: None,
                 winapi_events: flags.0,
                 text_id: text_input::Id::unique(),
+                prev_window: HWND::default(),
             },
             iced::Task::none(),
         )
@@ -120,20 +129,46 @@ impl EmotePicker {
                     Messages::LoadedEntries,
                 )
             }
-            Messages::EmoteSelect => todo!(),
+            Messages::EmoteSelect => {
+                let img_path = self
+                    .entries
+                    .iter()
+                    .rev()
+                    .nth(self.emote_index as usize)
+                    .unwrap()
+                    .clone();
+                let prev_win = HwndSend(self.prev_window);
+                iced::window::close(self.win.unwrap()).chain(iced::Task::future(async move {
+                    tokio::task::spawn_blocking(move || {
+                        let prev_win = prev_win;
+                        unsafe {
+                            if !SetForegroundWindow(prev_win.0).as_bool() {
+                                panic!("error setting window to foreground")
+                            }
+                        };
+                        paste_png(Some(prev_win.0), &std::path::PathBuf::from(img_path))
+                    })
+                    .await
+                    .unwrap();
+                    Messages::None
+                }))
+            }
             Messages::EmotePickerToggle => match self.win {
                 Some(t) => {
                     self.win = None;
                     iced::window::close(t)
                 }
-                None => iced::window::open({
-                    let mut settings = Settings::default();
-                    settings.decorations = false;
-                    settings.position = Position::Centered;
-                    settings.level = iced::window::Level::AlwaysOnTop;
-                    settings
-                })
-                .map(Messages::WindowOpen),
+                None => {
+                    self.prev_window = unsafe { GetForegroundWindow() };
+                    iced::window::open({
+                        let mut settings = Settings::default();
+                        settings.decorations = false;
+                        settings.position = Position::Centered;
+                        settings.level = iced::window::Level::AlwaysOnTop;
+                        settings
+                    })
+                    .map(Messages::WindowOpen)
+                }
             },
             Messages::WindowOpen(id) => {
                 self.win = Some(id);
