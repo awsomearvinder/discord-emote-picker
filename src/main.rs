@@ -189,6 +189,9 @@ impl EmotePicker {
             .rev()
             .map(|entry| {
                 container(iced::widget::row![
+                    container(iced::widget::image(entry).height(Pixels(35.0)))
+                        .center_x(40)
+                        .center_y(40),
                     iced::widget::text(entry).size(Pixels(25.0))
                 ])
                 .width(Fill)
