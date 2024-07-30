@@ -1,15 +1,10 @@
-use std::{
-    hash::{Hash, Hasher},
-    mem::MaybeUninit,
-    path::Path,
-    pin::Pin,
-};
+use std::{hash::Hash, mem::MaybeUninit, path::Path, pin::Pin};
 
 use futures::{self, Stream};
 use fuzzy_matcher::FuzzyMatcher;
 use iced::{
     advanced::{graphics::core::window, subscription::Recipe},
-    widget::{container, scrollable, text::LineHeight, text_input},
+    widget::{container, scrollable, text_input},
     window::{Position, Settings},
     Background, Border, Color,
     Length::Fill,
